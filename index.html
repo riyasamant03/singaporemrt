@@ -1,10 +1,371 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>My First Website</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Singapore MRT Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif}
+body{display:flex;height:100vh;overflow:hidden;background:#f0f4f8}
+#sidebar{width:300px;min-width:300px;background:#1e293b;color:#eee;display:flex;flex-direction:column;overflow:hidden;border-right:2px solid #334155}
+#sidebar h1{background:#0f172a;padding:14px 16px;font-size:14px;letter-spacing:1px;color:#f87171;text-transform:uppercase}
+.section{padding:12px 14px;border-bottom:1px solid #334155}
+.section h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#f87171;margin-bottom:8px}
+input,select{width:100%;padding:7px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#eee;font-size:13px;margin-bottom:6px}
+input::placeholder{color:#64748b}
+button{width:100%;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s}
+.btn-primary{background:#e94560;color:#fff}
+.btn-primary:hover{background:#c73652}
+.btn-secondary{background:#1e3a5f;color:#eee;border:1px solid #334155}
+.btn-secondary:hover{background:#2a4a7f}
+#fare-result{background:#0f172a;border-radius:6px;padding:8px 10px;font-size:13px;color:#4ade80;min-height:32px;margin-top:4px;line-height:1.6}
+#attractions-list{flex:1;overflow-y:auto;padding:10px 14px}
+#attractions-list h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#f87171;margin-bottom:8px}
+.attraction-item{background:#0f172a;border-radius:6px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:13px;cursor:pointer;border:1px solid transparent;transition:.2s}
+.attraction-item:hover{border-color:#e94560}
+.attraction-item .del{color:#f87171;cursor:pointer;font-size:18px;line-height:1;padding:0 4px}
+.status{font-size:12px;color:#94a3b8;font-style:italic;margin-top:4px}
+#map{flex:1;z-index:1}
+.info-popup{font-size:13px;min-width:160px}
+.info-popup h4{color:#e94560;margin-bottom:4px;font-size:14px}
+.info-popup .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:#fff;margin:2px 2px 4px 0}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0f172a}
+::-webkit-scrollbar-thumb{background:#e94560;border-radius:3px}
+</style>
 </head>
 <body>
-    <h1>Hello World!</h1>
-    <p>This is my first website hosted on GitHub.</p>
+
+<div id="sidebar">
+  <h1>🚇 Singapore MRT Map</h1>
+
+  <div class="section">
+    <h3>Add Attraction</h3>
+    <input id="attraction-input" type="text" placeholder="e.g. Gardens by the Bay"/>
+    <button class="btn-primary" onclick="addAttraction()">📍 Add to Map</button>
+    <div id="add-status" class="status"></div>
+  </div>
+
+  <div class="section">
+    <h3>Fare Calculator</h3>
+    <select id="from-station"><option value="">From station...</option></select>
+    <select id="to-station"><option value="">To station...</option></select>
+    <button class="btn-secondary" onclick="calcFare()">Calculate Fare</button>
+    <div id="fare-result">Select stations to calculate fare.</div>
+  </div>
+
+  <div id="attractions-list">
+    <h3>My Attractions</h3>
+    <div id="attractions-items"><p style="font-size:12px;color:#64748b">No attractions added yet.</p></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+// ── MRT DATA ──────────────────────────────────────────────────────────────────
+const LINES = [
+  {id:'nsl',name:'North-South Line',color:'#d42e12',abbr:'NS',stations:[
+    {name:'Jurong East',lat:1.3332,lng:103.7422,interchange:['EWL']},
+    {name:'Bukit Batok',lat:1.3491,lng:103.7496},
+    {name:'Bukit Gombak',lat:1.3588,lng:103.7516},
+    {name:'Choa Chu Kang',lat:1.3854,lng:103.7441,interchange:['BPL']},
+    {name:'Yew Tee',lat:1.3969,lng:103.7474},
+    {name:'Kranji',lat:1.4252,lng:103.7619},
+    {name:'Marsiling',lat:1.4328,lng:103.7742},
+    {name:'Woodlands',lat:1.4369,lng:103.7864,interchange:['TEL']},
+    {name:'Admiralty',lat:1.4408,lng:103.8008},
+    {name:'Sembawang',lat:1.4491,lng:103.8201},
+    {name:'Canberra',lat:1.4432,lng:103.8297},
+    {name:'Yishun',lat:1.4294,lng:103.8354},
+    {name:'Khatib',lat:1.4174,lng:103.8329},
+    {name:'Yio Chu Kang',lat:1.3817,lng:103.8449},
+    {name:'Ang Mo Kio',lat:1.3700,lng:103.8495},
+    {name:'Bishan',lat:1.3510,lng:103.8485,interchange:['CCL']},
+    {name:'Braddell',lat:1.3401,lng:103.8469},
+    {name:'Toa Payoh',lat:1.3326,lng:103.8468},
+    {name:'Novena',lat:1.3203,lng:103.8437},
+    {name:'Newton',lat:1.3124,lng:103.8388,interchange:['DTL']},
+    {name:'Orchard',lat:1.3041,lng:103.8318,interchange:['TEL']},
+    {name:'Somerset',lat:1.3006,lng:103.8389},
+    {name:'Dhoby Ghaut',lat:1.2989,lng:103.8456,interchange:['CCL','NEL']},
+    {name:'City Hall',lat:1.2931,lng:103.8520,interchange:['EWL']},
+    {name:'Raffles Place',lat:1.2840,lng:103.8513,interchange:['EWL']},
+    {name:'Marina Bay',lat:1.2764,lng:103.8547,interchange:['CCL','TEL']},
+    {name:'Marina South Pier',lat:1.2709,lng:103.8631},
+  ]},
+  {id:'ewl',name:'East-West Line',color:'#009645',abbr:'EW',stations:[
+    {name:'Pasir Ris',lat:1.3731,lng:103.9493},
+    {name:'Tampines',lat:1.3529,lng:103.9454,interchange:['DTL']},
+    {name:'Simei',lat:1.3431,lng:103.9530},
+    {name:'Tanah Merah',lat:1.3273,lng:103.9461},
+    {name:'Bedok',lat:1.3240,lng:103.9300},
+    {name:'Kembangan',lat:1.3210,lng:103.9129},
+    {name:'Eunos',lat:1.3195,lng:103.9029},
+    {name:'Paya Lebar',lat:1.3179,lng:103.8920,interchange:['CCL']},
+    {name:'Aljunied',lat:1.3162,lng:103.8831},
+    {name:'Kallang',lat:1.3114,lng:103.8715},
+    {name:'Lavender',lat:1.3071,lng:103.8632},
+    {name:'Bugis',lat:1.3007,lng:103.8564,interchange:['DTL']},
+    {name:'City Hall',lat:1.2931,lng:103.8520,interchange:['NSL']},
+    {name:'Raffles Place',lat:1.2840,lng:103.8513,interchange:['NSL']},
+    {name:'Tanjong Pagar',lat:1.2766,lng:103.8454},
+    {name:'Outram Park',lat:1.2802,lng:103.8396,interchange:['NEL','TEL']},
+    {name:'Tiong Bahru',lat:1.2863,lng:103.8272},
+    {name:'Redhill',lat:1.2893,lng:103.8167},
+    {name:'Queenstown',lat:1.2942,lng:103.8061},
+    {name:'Commonwealth',lat:1.3024,lng:103.7981},
+    {name:'Buona Vista',lat:1.3072,lng:103.7899,interchange:['CCL']},
+    {name:'Dover',lat:1.3112,lng:103.7786},
+    {name:'Clementi',lat:1.3152,lng:103.7651},
+    {name:'Jurong East',lat:1.3332,lng:103.7422,interchange:['NSL']},
+    {name:'Chinese Garden',lat:1.3425,lng:103.7326},
+    {name:'Lakeside',lat:1.3443,lng:103.7206},
+    {name:'Boon Lay',lat:1.3387,lng:103.7062},
+    {name:'Pioneer',lat:1.3375,lng:103.6972},
+    {name:'Joo Koon',lat:1.3278,lng:103.6784},
+    {name:'Gul Circle',lat:1.3198,lng:103.6605},
+    {name:'Tuas Crescent',lat:1.3214,lng:103.6491},
+    {name:'Tuas West Road',lat:1.3311,lng:103.6399},
+    {name:'Tuas Link',lat:1.3407,lng:103.6367},
+  ]},
+  {id:'nel',name:'North-East Line',color:'#9900aa',abbr:'NE',stations:[
+    {name:'HarbourFront',lat:1.2654,lng:103.8218,interchange:['CCL']},
+    {name:'Outram Park',lat:1.2802,lng:103.8396,interchange:['EWL','TEL']},
+    {name:'Chinatown',lat:1.2846,lng:103.8442,interchange:['DTL']},
+    {name:'Clarke Quay',lat:1.2887,lng:103.8467},
+    {name:'Dhoby Ghaut',lat:1.2989,lng:103.8456,interchange:['NSL','CCL']},
+    {name:'Little India',lat:1.3066,lng:103.8495,interchange:['DTL']},
+    {name:'Farrer Park',lat:1.3123,lng:103.8545},
+    {name:'Boon Keng',lat:1.3196,lng:103.8616},
+    {name:'Potong Pasir',lat:1.3314,lng:103.8688},
+    {name:'Woodleigh',lat:1.3391,lng:103.8706},
+    {name:'Serangoon',lat:1.3497,lng:103.8737,interchange:['CCL']},
+    {name:'Kovan',lat:1.3597,lng:103.8852},
+    {name:'Hougang',lat:1.3715,lng:103.8924},
+    {name:'Buangkok',lat:1.3832,lng:103.8929},
+    {name:'Sengkang',lat:1.3915,lng:103.8954},
+    {name:'Punggol',lat:1.4052,lng:103.9022},
+  ]},
+  {id:'ccl',name:'Circle Line',color:'#fa9e0d',abbr:'CC',stations:[
+    {name:'Dhoby Ghaut',lat:1.2989,lng:103.8456,interchange:['NSL','NEL']},
+    {name:'Bras Basah',lat:1.2967,lng:103.8502},
+    {name:'Esplanade',lat:1.2934,lng:103.8556},
+    {name:'Promenade',lat:1.2934,lng:103.8613,interchange:['DTL']},
+    {name:'Nicoll Highway',lat:1.2997,lng:103.8633},
+    {name:'Stadium',lat:1.3026,lng:103.8753},
+    {name:'Mountbatten',lat:1.3062,lng:103.8822},
+    {name:'Dakota',lat:1.3088,lng:103.8882},
+    {name:'Paya Lebar',lat:1.3179,lng:103.8920,interchange:['EWL']},
+    {name:'MacPherson',lat:1.3264,lng:103.8896,interchange:['DTL']},
+    {name:'Tai Seng',lat:1.3355,lng:103.8878},
+    {name:'Bartley',lat:1.3421,lng:103.8797},
+    {name:'Serangoon',lat:1.3497,lng:103.8737,interchange:['NEL']},
+    {name:'Lorong Chuan',lat:1.3513,lng:103.8643},
+    {name:'Bishan',lat:1.3510,lng:103.8485,interchange:['NSL']},
+    {name:'Marymount',lat:1.3491,lng:103.8393},
+    {name:'Caldecott',lat:1.3370,lng:103.8394,interchange:['TEL']},
+    {name:'Botanic Gardens',lat:1.3224,lng:103.8155,interchange:['DTL']},
+    {name:'Farrer Road',lat:1.3173,lng:103.8079},
+    {name:'Holland Village',lat:1.3126,lng:103.7962},
+    {name:'Buona Vista',lat:1.3072,lng:103.7899,interchange:['EWL']},
+    {name:'one-north',lat:1.2993,lng:103.7872},
+    {name:'Kent Ridge',lat:1.2933,lng:103.7845},
+    {name:'Haw Par Villa',lat:1.2826,lng:103.7821},
+    {name:'Pasir Panjang',lat:1.2762,lng:103.7919},
+    {name:'Labrador Park',lat:1.2720,lng:103.8021},
+    {name:'Telok Blangah',lat:1.2706,lng:103.8093},
+    {name:'HarbourFront',lat:1.2654,lng:103.8218,interchange:['NEL']},
+    {name:'Bayfront',lat:1.2822,lng:103.8597,interchange:['DTL']},
+    {name:'Marina Bay',lat:1.2764,lng:103.8547,interchange:['NSL','TEL']},
+  ]},
+  {id:'dtl',name:'Downtown Line',color:'#005ec4',abbr:'DT',stations:[
+    {name:'Bukit Panjang',lat:1.3786,lng:103.7763},
+    {name:'Cashew',lat:1.3697,lng:103.7760},
+    {name:'Hillview',lat:1.3619,lng:103.7678},
+    {name:'Beauty World',lat:1.3410,lng:103.7760},
+    {name:'King Albert Park',lat:1.3361,lng:103.7831},
+    {name:'Sixth Avenue',lat:1.3306,lng:103.7969},
+    {name:'Tan Kah Kee',lat:1.3252,lng:103.8074},
+    {name:'Botanic Gardens',lat:1.3224,lng:103.8155,interchange:['CCL']},
+    {name:'Stevens',lat:1.3199,lng:103.8268,interchange:['TEL']},
+    {name:'Newton',lat:1.3124,lng:103.8388,interchange:['NSL']},
+    {name:'Little India',lat:1.3066,lng:103.8495,interchange:['NEL']},
+    {name:'Rochor',lat:1.3038,lng:103.8529},
+    {name:'Bugis',lat:1.3007,lng:103.8564,interchange:['EWL']},
+    {name:'Promenade',lat:1.2934,lng:103.8613,interchange:['CCL']},
+    {name:'Bayfront',lat:1.2822,lng:103.8597,interchange:['CCL']},
+    {name:'Downtown',lat:1.2794,lng:103.8524},
+    {name:'Telok Ayer',lat:1.2822,lng:103.8484},
+    {name:'Chinatown',lat:1.2846,lng:103.8442,interchange:['NEL']},
+    {name:'Fort Canning',lat:1.2917,lng:103.8439},
+    {name:'Bencoolen',lat:1.2983,lng:103.8499},
+    {name:'Jalan Besar',lat:1.3049,lng:103.8560},
+    {name:'Bendemeer',lat:1.3131,lng:103.8637},
+    {name:'Geylang Bahru',lat:1.3215,lng:103.8714},
+    {name:'Mattar',lat:1.3271,lng:103.8831},
+    {name:'MacPherson',lat:1.3264,lng:103.8896,interchange:['CCL']},
+    {name:'Ubi',lat:1.3295,lng:103.8990},
+    {name:'Kaki Bukit',lat:1.3347,lng:103.9089},
+    {name:'Bedok North',lat:1.3346,lng:103.9193},
+    {name:'Bedok Reservoir',lat:1.3362,lng:103.9322},
+    {name:'Tampines West',lat:1.3463,lng:103.9387},
+    {name:'Tampines',lat:1.3529,lng:103.9454,interchange:['EWL']},
+    {name:'Tampines East',lat:1.3567,lng:103.9549},
+    {name:'Upper Changi',lat:1.3413,lng:103.9614},
+    {name:'Expo',lat:1.3352,lng:103.9616},
+  ]},
+  {id:'tel',name:'Thomson-East Coast Line',color:'#9d5b25',abbr:'TE',stations:[
+    {name:'Woodlands North',lat:1.4478,lng:103.8271},
+    {name:'Woodlands',lat:1.4369,lng:103.7864,interchange:['NSL']},
+    {name:'Woodlands South',lat:1.4233,lng:103.7981},
+    {name:'Springleaf',lat:1.4038,lng:103.8188},
+    {name:'Lentor',lat:1.3939,lng:103.8340},
+    {name:'Mayflower',lat:1.3826,lng:103.8378},
+    {name:'Bright Hill',lat:1.3694,lng:103.8353},
+    {name:'Upper Thomson',lat:1.3567,lng:103.8317},
+    {name:'Caldecott',lat:1.3370,lng:103.8394,interchange:['CCL']},
+    {name:'Stevens',lat:1.3199,lng:103.8268,interchange:['DTL']},
+    {name:'Napier',lat:1.3062,lng:103.8197},
+    {name:'Orchard Boulevard',lat:1.3041,lng:103.8272},
+    {name:'Orchard',lat:1.3041,lng:103.8318,interchange:['NSL']},
+    {name:'Great World',lat:1.2940,lng:103.8261},
+    {name:'Havelock',lat:1.2888,lng:103.8357},
+    {name:'Outram Park',lat:1.2802,lng:103.8396,interchange:['EWL','NEL']},
+    {name:'Maxwell',lat:1.2795,lng:103.8453},
+    {name:'Shenton Way',lat:1.2783,lng:103.8497},
+    {name:'Marina Bay',lat:1.2764,lng:103.8547,interchange:['NSL','CCL']},
+    {name:'Gardens by the Bay',lat:1.2816,lng:103.8654},
+    {name:'Tanjong Rhu',lat:1.2977,lng:103.8715},
+    {name:'Katong Park',lat:1.3024,lng:103.8836},
+    {name:'Tanjong Katong',lat:1.3037,lng:103.8945},
+    {name:'Marine Parade',lat:1.3022,lng:103.9059},
+    {name:'Marine Terrace',lat:1.3062,lng:103.9130},
+    {name:'Siglap',lat:1.3100,lng:103.9261},
+    {name:'Bayshore',lat:1.3121,lng:103.9369},
+  ]}
+];
+
+// Build station lookup
+const stationMap={};
+LINES.forEach(line=>line.stations.forEach(s=>{
+  if(!stationMap[s.name]) stationMap[s.name]={...s,lines:[line.id]};
+  else if(!stationMap[s.name].lines.includes(line.id)) stationMap[s.name].lines.push(line.id);
+}));
+const uniqueStations=Object.values(stationMap).sort((a,b)=>a.name.localeCompare(b.name));
+
+// Populate dropdowns
+['from-station','to-station'].forEach(id=>{
+  const sel=document.getElementById(id);
+  uniqueStations.forEach(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;sel.appendChild(o);});
+});
+
+// ── MAP ───────────────────────────────────────────────────────────────────────
+const map=L.map('map').setView([1.3521,103.8198],12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
+  subdomains:'abcd',maxZoom:19
+}).addTo(map);
+
+// Draw lines & stations
+LINES.forEach(line=>{
+  L.polyline(line.stations.map(s=>[s.lat,s.lng]),{color:line.color,weight:4.5,opacity:.9}).addTo(map);
+  line.stations.forEach(s=>{
+    const isIx=s.interchange&&s.interchange.length>0;
+    const icon=L.divIcon({
+      html:`<div style="width:${isIx?13:9}px;height:${isIx?13:9}px;background:${line.color};border:${isIx?'2.5px':'2px'} solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.35)"></div>`,
+      className:'',iconAnchor:[isIx?6:4,isIx?6:4]
+    });
+    const sl=stationMap[s.name]?.lines||[line.id];
+    const badges=sl.map(lid=>{const l=LINES.find(x=>x.id===lid);return l?`<span class="badge" style="background:${l.color}">${l.abbr}</span>`:''}).join('');
+    const lineNames=sl.map(lid=>LINES.find(l=>l.id===lid)?.name||lid).join(', ');
+    L.marker([s.lat,s.lng],{icon}).addTo(map)
+      .bindPopup(`<div class="info-popup"><h4>${s.name}</h4>${badges}<br/><small>${lineNames}</small>${isIx?'<br/><small>🔄 Interchange Station</small>':''}</div>`);
+  });
+});
+
+// Legend
+const legend=L.control({position:'bottomright'});
+legend.onAdd=()=>{
+  const d=L.DomUtil.create('div');
+  d.style.cssText='background:rgba(255,255,255,.93);padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.9;min-width:170px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+  d.innerHTML='<b style="color:#e94560;font-size:13px">MRT Lines</b><br>'+LINES.map(l=>`<span style="color:${l.color};font-size:15px">⬤</span> ${l.name}`).join('<br>');
+  return d;
+};
+legend.addTo(map);
+
+// ── FARE CALCULATOR ───────────────────────────────────────────────────────────
+function haversine(la1,lo1,la2,lo2){
+  const R=6371,dL=(la2-la1)*Math.PI/180,dO=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function calcFare(){
+  const from=document.getElementById('from-station').value;
+  const to=document.getElementById('to-station').value;
+  const res=document.getElementById('fare-result');
+  if(!from||!to){res.textContent='Please select both stations.';return;}
+  if(from===to){res.textContent='Same station selected.';return;}
+  const s1=stationMap[from],s2=stationMap[to];
+  const dist=haversine(s1.lat,s1.lng,s2.lat,s2.lng);
+  const tiers=[3.2,4.2,5.2,6.2,7.2,8.2,9.2,10.2,11.2,12.2,13.2,14.2,15.2,16.2,17.2,18.2,19.2,20.2,21.2,22.2,23.2,24.2,25.2,26.2,27.2,28.2];
+  const fares=[0.92,0.99,1.06,1.13,1.19,1.26,1.33,1.40,1.47,1.54,1.60,1.67,1.74,1.81,1.87,1.94,2.01,2.08,2.15,2.21,2.28,2.35,2.42,2.49,2.55,2.62];
+  let fare=2.62;
+  for(let i=0;i<tiers.length;i++){if(dist<=tiers[i]){fare=fares[i];break;}}
+  res.innerHTML=`<b>${from}</b> → <b>${to}</b><br/>~${dist.toFixed(1)} km &nbsp;|&nbsp; Adult EZ-Link: <b>S$${fare.toFixed(2)}</b>`;
+}
+
+// ── ATTRACTIONS ───────────────────────────────────────────────────────────────
+const attractions=[], attractionMarkers={};
+
+async function addAttraction(){
+  const input=document.getElementById('attraction-input');
+  const status=document.getElementById('add-status');
+  const name=input.value.trim();
+  if(!name) return;
+  status.textContent='🔍 Searching...';
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(name+' Singapore')}&format=json&limit=1`,{headers:{'Accept-Language':'en'}});
+    const d=await r.json();
+    if(!d.length){status.textContent=`❌ "${name}" not found. Try a different name.`;return;}
+    const {lat,lon,display_name}=d[0];
+    const latF=parseFloat(lat),lngF=parseFloat(lon);
+    const shortAddr=display_name.split(',').slice(0,3).join(', ');
+    const id=Date.now();
+    const icon=L.divIcon({html:`<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))">📍</div>`,className:'',iconAnchor:[11,22]});
+    const marker=L.marker([latF,lngF],{icon}).addTo(map)
+      .bindPopup(`<div class="info-popup"><h4>📍 ${name}</h4><small>${shortAddr}</small></div>`)
+      .openPopup();
+    map.setView([latF,lngF],15);
+    attractions.push({id,name,lat:latF,lng:lngF});
+    attractionMarkers[id]=marker;
+    renderAttractionsList();
+    input.value='';
+    status.textContent='';
+  }catch(e){status.textContent='❌ Error finding location. Try again.';}
+}
+
+// Allow Enter key to add attraction
+document.getElementById('attraction-input').addEventListener('keydown',e=>{if(e.key==='Enter') addAttraction();});
+
+function removeAttraction(id){
+  const idx=attractions.findIndex(a=>a.id===id);
+  if(idx>-1){map.removeLayer(attractionMarkers[id]);delete attractionMarkers[id];attractions.splice(idx,1);renderAttractionsList();}
+}
+
+function renderAttractionsList(){
+  const c=document.getElementById('attractions-items');
+  if(!attractions.length){c.innerHTML='<p style="font-size:12px;color:#64748b">No attractions added yet.</p>';return;}
+  c.innerHTML=attractions.map(a=>`
+    <div class="attraction-item" onclick="flyTo(${a.lat},${a.lng},${a.id})">
+      <span>📍 ${a.name}</span>
+      <span class="del" onclick="event.stopPropagation();removeAttraction(${a.id})">×</span>
+    </div>`).join('');
+}
+
+function flyTo(lat,lng,id){map.setView([lat,lng],16);attractionMarkers[id]?.openPopup();}
+</script>
 </body>
 </html>
